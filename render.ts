@@ -35,12 +35,27 @@ export function textComponent(lines: string[]): Component {
 	return { render: () => lines };
 }
 
+/**
+ * Strip ANSI escape and control sequences before terminal rendering.
+ * Third-party page content (fetch bodies, search snippets, URLs) can carry
+ * escape sequences that would otherwise execute in the user's terminal —
+ * cursor moves, OSC 8 hyperlinks, title changes (CWE-1174 terminal escape
+ * injection). Applied at the render entry point so every TUI path is covered.
+ */
+export function stripAnsi(text: string): string {
+	return text.replace(
+		/\x1b(?:\[[0-9;?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[()][0-9A-Z]|[@-Z\\-_])|\x9b[0-9;?]*[ -/]*[@-~]|[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g,
+		"",
+	);
+}
+
 /** ANSI-aware width truncation fallback (kept dependency-free). */
 export function clip(line: string, width: number): string {
 	if (width <= 0) return "";
+	const text = stripAnsi(line);
 	let visible = 0;
 	let out = "";
-	for (const ch of line) {
+	for (const ch of text) {
 		const w = ch.charCodeAt(0) > 0xff ? 2 : 1;
 		if (visible + w > width) return `${out}…`;
 		out += ch;

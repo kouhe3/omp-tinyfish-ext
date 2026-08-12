@@ -17,6 +17,7 @@ import {
 	detailRow,
 	moreHint,
 	statusLine,
+	stripAnsi,
 	treeRow,
 	type Component,
 	type RenderTheme,
@@ -60,7 +61,9 @@ export function buildSearchDigest(res: SearchQueryResponse, shown: number, laten
 		return `${head}\n${snippet}\n   ${r.url}`;
 	});
 	const footer = `共 ${res.total_results} 条结果（第 ${(res.page ?? 0) + 1} 页，耗时 ${latencyMs}ms）`;
-	return [`搜索「${res.query}」：`, ...rows, "", footer].join("\n");
+	// stripAnsi: third-party titles/snippets/URLs must not carry escape
+	// sequences into the model context or downstream rendering.
+	return stripAnsi([`搜索「${res.query}」：`, ...rows, "", footer].join("\n"));
 }
 
 /** Core execute body — split out so a smoke test can drive it with a stub client. */
@@ -71,7 +74,7 @@ export async function runSearch(
 	signal?: AbortSignal,
 ): Promise<{ text: string; details: SearchDetails; isError?: boolean }> {
 	const started = Date.now();
-	onUpdate?.({ content: [{ type: "text", text: `[tf] 正在搜索「${params.query}」…` }] });
+	onUpdate?.({ content: [{ type: "text", text: `[tf] 正在搜索「${stripAnsi(params.query)}」…` }] });
 	if (signal?.aborted) return { text: "已取消", details: emptyDetails(params) };
 
 	// `max_results` is a local display cap — the SDK schema is strict and
@@ -154,7 +157,7 @@ export function defineSearchTool(pi: ExtensionAPI) {
 			domain_type: z.enum(["web", "news", "research_paper"]).optional().describe("结果类型：网页/新闻/学术论文"),
 			pub_year_min: z.number().optional().describe("论文出版年份下限"),
 			pub_year_max: z.number().optional().describe("论文出版年份上限"),
-			page: z.number().optional().describe("分页页码，0 起（0 = 第 1 页），最大 10"),
+			page: z.number().max(10).optional().describe("分页页码，0 起（0 = 第 1 页），最大 10"),
 			max_results: z.number().optional().describe(`返回给模型的条数上限，默认 ${DEFAULT_MAX_RESULTS}，最大 20`),
 		}),
 		async execute(

@@ -18,6 +18,7 @@ import {
 	moreHint,
 	previewLines,
 	statusLine,
+	stripAnsi,
 	treeRow,
 	type Component,
 	type RenderTheme,
@@ -65,7 +66,9 @@ export function buildFetchDigest(
 	});
 	const errs = res.errors.map(e => `失败：${e.url} — ${e.error}`);
 	const footer = `共 ${res.results.length} 个 URL 抓取成功，${res.errors.length} 个失败（耗时 ${latencyMs}ms）`;
-	return [...blocks, ...errs, "", footer].join("\n\n");
+	// stripAnsi: third-party page bodies/titles/links must not carry escape
+	// sequences into the model context or downstream rendering.
+	return stripAnsi([...blocks, ...errs, "", footer].join("\n\n"));
 }
 
 /** Core execute body — split out for smoke tests. */
