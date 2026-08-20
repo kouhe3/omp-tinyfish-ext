@@ -19,11 +19,22 @@ export const MAX_COLLAPSED_ITEMS = 8;
 /** Body preview lines per item when expanded (PREVIEW_LIMITS.EXPANDED_LINES = 12). */
 export const MAX_EXPANDED_BODY_LINES = 12;
 
+export const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
 /** Minimal shape of the host Theme as used here. */
 export interface RenderTheme {
 	fg(color: string, text: string): string;
-	/** Tree glyphs — optional so a minimal theme still works. */
-	tree?: { branch?: string; last?: string };
+	bold?(text: string): string;
+	status?: {
+		success?: string;
+		error?: string;
+		warning?: string;
+		info?: string;
+		pending?: string;
+		running?: string;
+	};
+	tree?: { branch?: string; last?: string; vertical?: string; horizontal?: string };
+	sep?: { dot?: string; slash?: string; pipe?: string };
 }
 
 /** Duck-typed pi-tui Component. */
@@ -64,11 +75,56 @@ export function clip(line: string, width: number): string {
 	return out;
 }
 
-/** Status line for renderCall/renderResult header. */
-export function statusLine(icon: string, title: string, description: string, theme: RenderTheme): string {
-	const left = `${theme.fg("dim", "‹")} ${icon} ${theme.fg("accent", title)}`;
-	const right = description ? theme.fg("dim", description) : "";
-	return right ? `${left} ${right}` : left;
+export interface StatusLineOptions {
+	icon?: "pending" | "running" | "success" | "error" | "warning" | "info";
+	iconOverride?: string;
+	spinnerFrame?: number;
+	title: string;
+	titleColor?: string;
+	description?: string;
+	meta?: string[];
+}
+
+/** Standardized status line for renderCall/renderResult header. */
+export function statusLine(opts: StatusLineOptions, theme: RenderTheme): string {
+	let iconStr = "";
+	if (opts.iconOverride) {
+		iconStr = opts.iconOverride;
+	} else if (opts.spinnerFrame !== undefined) {
+		const frame = SPINNER_FRAMES[Math.abs(opts.spinnerFrame) % SPINNER_FRAMES.length];
+		iconStr = theme.fg("accent", frame);
+	} else if (opts.icon === "success") {
+		const sym = theme.status?.success ?? "✓";
+		iconStr = theme.fg("success", sym);
+	} else if (opts.icon === "error") {
+		const sym = theme.status?.error ?? "✕";
+		iconStr = theme.fg("error", sym);
+	} else if (opts.icon === "warning") {
+		const sym = theme.status?.warning ?? "⚠";
+		iconStr = theme.fg("warning", sym);
+	} else if (opts.icon === "running") {
+		const sym = theme.status?.running ?? "⠋";
+		iconStr = theme.fg("accent", sym);
+	} else if (opts.icon === "pending") {
+		const sym = theme.status?.pending ?? "…";
+		iconStr = theme.fg("dim", sym);
+	}
+
+	const titleColor = opts.titleColor ?? "accent";
+	const titleText = theme.fg(titleColor, opts.title);
+	let line = iconStr ? `${iconStr} ${titleText}` : titleText;
+
+	if (opts.description) {
+		line += `: ${theme.fg("muted", opts.description)}`;
+	}
+
+	const meta = opts.meta?.filter(Boolean) ?? [];
+	if (meta.length > 0) {
+		const dot = theme.sep?.dot ?? "·";
+		line += ` ${theme.fg("dim", meta.join(` ${dot} `))}`;
+	}
+
+	return line;
 }
 
 const glyph = (theme: RenderTheme, isLast: boolean): string => {
@@ -77,18 +133,18 @@ const glyph = (theme: RenderTheme, isLast: boolean): string => {
 };
 
 /** One tree row: `  glyph text` with the glyph dimmed. */
-export function treeRow(text: string, theme: RenderTheme, isLast = false): string {
-	return ` ${theme.fg("dim", glyph(theme, isLast))} ${clip(text, 80)}`;
+export function treeRow(text: string, theme: RenderTheme, isLast = false, maxWidth = 80): string {
+	return ` ${theme.fg("dim", glyph(theme, isLast))} ${clip(text, maxWidth)}`;
 }
 
 /** Indented detail row under a tree item (spacer keeps the branch column). */
-export function detailRow(text: string, theme: RenderTheme, indent = 3): string {
-	return `${" ".repeat(indent)}${theme.fg("dim", clip(text, 77))}`;
+export function detailRow(text: string, theme: RenderTheme, indent = 3, maxWidth = 77): string {
+	return `${" ".repeat(indent)}${theme.fg("dim", clip(text, maxWidth))}`;
 }
 
-/** "N more" footer hint, matching formatMoreItems style. */
+/** "N more" footer hint. */
 export function moreHint(count: number, what: string, theme: RenderTheme): string {
-	return theme.fg("dim", `… ${count} more ${what}（Enter 展开）`);
+	return theme.fg("dim", `… ${count} more ${what} (ctrl+o 展开)`);
 }
 
 /** Extract a displayable domain from a URL. */
@@ -109,9 +165,10 @@ export function previewLines(
 	width: number,
 ): string[] {
 	const shown: string[] = [];
+	const maxLineWidth = Math.max(20, width - 6);
 	for (const line of body) {
 		if (shown.length >= maxLines) break;
-		shown.push(theme.fg("toolOutput", clip(line, width - 6)));
+		shown.push(theme.fg("toolOutput", clip(line, maxLineWidth)));
 	}
 	const remaining = body.length - shown.length;
 	if (remaining > 0) shown.push(moreHint(remaining, "line", theme));

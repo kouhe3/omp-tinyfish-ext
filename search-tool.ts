@@ -14,6 +14,7 @@ import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { getTinyFish, formatTinyFishError } from "./client";
 import {
 	MAX_COLLAPSED_ITEMS,
+	clip,
 	detailRow,
 	moreHint,
 	statusLine,
@@ -42,7 +43,7 @@ interface SearchParams {
 	max_results?: number;
 }
 
-interface SearchDetails {
+export interface SearchDetails {
 	query: string;
 	total_results: number;
 	page: number;
@@ -123,17 +124,19 @@ function searchTree(
 	theme: RenderTheme,
 	expanded: boolean,
 	isLast: boolean,
+	maxRowWidth = 80,
 ): string[] {
+	const maxDetailWidth = Math.max(26, maxRowWidth - 4);
 	const title = `${index + 1}. ${result.title || result.url}`;
 	if (!expanded) {
 		const meta = [result.site_name, result.date, result.publisher].filter((v): v is string => Boolean(v));
-		return [treeRow(meta.length > 0 ? `${title} — ${meta.join(" · ")}` : title, theme, isLast)];
+		return [treeRow(meta.length > 0 ? `${title} — ${meta.join(" · ")}` : title, theme, isLast, maxRowWidth)];
 	}
-	const lines = [treeRow(title, theme, false)];
-	if (result.snippet) lines.push(detailRow(result.snippet, theme));
+	const lines = [treeRow(title, theme, false, maxRowWidth)];
+	if (result.snippet) lines.push(detailRow(result.snippet, theme, 3, maxDetailWidth));
 	const meta = [result.site_name, result.date, result.publisher].filter((v): v is string => Boolean(v));
-	if (meta.length > 0) lines.push(detailRow(meta.join(" · "), theme));
-	lines.push(detailRow(theme.fg("dim", result.url), theme, 3));
+	if (meta.length > 0) lines.push(detailRow(meta.join(" · "), theme, 3, maxDetailWidth));
+	lines.push(detailRow(theme.fg("dim", result.url), theme, 3, maxDetailWidth));
 	return lines;
 }
 
@@ -144,6 +147,7 @@ export function defineSearchTool(pi: ExtensionAPI) {
 		label: "TinyFish Search",
 		description:
 			"TinyFish 网页搜索。比 MCP search 信息更全：支持 purpose（搜索意图）、域名白/黑名单、日期范围、时效、学术/新闻过滤；结果以卡片渲染，给模型的摘要默认 8 条。",
+		mergeCallAndResult: true,
 		parameters: z.object({
 			query: z.string().describe("搜索查询词"),
 			purpose: z.string().optional().describe("为什么搜索（目标/用途），给搜索附加意图信号"),
@@ -174,37 +178,102 @@ export function defineSearchTool(pi: ExtensionAPI) {
 		},
 		renderCall(
 			args: SearchParams,
-			_options: unknown,
+			options: { spinnerFrame?: number },
 			theme: RenderTheme,
 		): Component {
-			const desc = args.query ? clipTo(args.query, 80) : "…";
-			return { render: () => [statusLine("S", "Search", desc, theme)] };
+			const desc = args?.query ? clip(args.query, 80) : "…";
+			return {
+				render: () => [
+					statusLine(
+						{
+							icon: "pending",
+							spinnerFrame: options.spinnerFrame,
+							title: "Search",
+							description: desc,
+						},
+						theme,
+					),
+				],
+			};
 		},
 		renderResult(
-			result: { details?: SearchDetails; isError?: boolean },
-			options: { expanded?: boolean },
+			result: { content?: Array<{ type: string; text?: string }>; details?: SearchDetails; isError?: boolean },
+			options: { expanded?: boolean; isPartial?: boolean; spinnerFrame?: number },
 			theme: RenderTheme,
+			args?: SearchParams,
 		): Component {
+			if (result.isError) {
+				const desc = args?.query ? clip(args.query, 80) : undefined;
+				return {
+					render: () => [
+						statusLine(
+							{
+								icon: "error",
+								title: "Search",
+								description: desc,
+								meta: ["搜索失败"],
+							},
+							theme,
+						),
+					],
+				};
+			}
+
 			const d = result.details;
-			if (result.isError || !d || d.results.length === 0) {
-				const text = result.isError ? "搜索失败" : "无结果";
-				return { render: () => [statusLine("S", "Search", text, theme)] };
+			if (!d) {
+				// Partial / pending update during execution (e.g. onUpdate fired before response arrived).
+				// Keep the in-flight status line with spinner rather than showing "无结果".
+				const desc = args?.query ? clip(args.query, 80) : "…";
+				return {
+					render: () => [
+						statusLine(
+							{
+								icon: "pending",
+								spinnerFrame: options.spinnerFrame,
+								title: "Search",
+								description: desc,
+							},
+							theme,
+						),
+					],
+				};
+			}
+
+			if (d.results.length === 0) {
+				return {
+					render: () => [
+						statusLine(
+							{
+								icon: "warning",
+								title: "Search",
+								description: clip(d.query, 80),
+								meta: ["无结果", `${d.latency_ms}ms`],
+							},
+							theme,
+						),
+					],
+				};
 			}
 			return {
-				render: () => {
+				render: (width: number) => {
 					const expanded = options.expanded === true;
 					const lines: string[] = [];
+					const maxDescLen = Math.max(30, (width || 80) - 30);
 					lines.push(
 						statusLine(
-							"S",
-							"Search",
-							`${d.query} · 共 ${d.total_results} 条 · ${d.latency_ms}ms`,
+							{
+								icon: "success",
+								title: "Search",
+								description: clip(d.query, maxDescLen),
+								meta: [`共 ${d.total_results} 条`, `${d.latency_ms}ms`],
+							},
 							theme,
 						),
 					);
 					const items = expanded ? d.results.length : Math.min(d.results.length, MAX_COLLAPSED_ITEMS);
+					const maxRowWidth = Math.max(30, (width || 80) - 4);
 					for (let i = 0; i < items; i++) {
-						lines.push(...searchTree(d.results[i], i, theme, expanded, i === items - 1));
+						lines.push(...searchTree(d.results[i], i, theme, expanded, i === items - 1, maxRowWidth));
 					}
 					if (!expanded && d.results.length > items) {
 						lines.push(moreHint(d.results.length - items, "result", theme));
@@ -216,6 +285,3 @@ export function defineSearchTool(pi: ExtensionAPI) {
 	};
 }
 
-function clipTo(text: string, max: number): string {
-	return text.length > max ? `${text.slice(0, max)}…` : text;
-}

@@ -38,7 +38,7 @@ interface FetchParams {
 	max_text_chars?: number;
 }
 
-interface FetchDetails {
+export interface FetchDetails {
 	latency_ms: number;
 	results: FetchResponse["results"];
 	errors: FetchResponse["errors"];
@@ -116,21 +116,23 @@ function fetchTree(
 	expanded: boolean,
 	isLast: boolean,
 ): string[] {
+	const maxRowWidth = Math.max(30, (width || 80) - 4);
+	const maxDetailWidth = Math.max(26, (width || 80) - 6);
 	const title = `${index + 1}. ${r.title ?? hostOf(r.final_url ?? r.url)}`;
 	if (!expanded) {
-		return [treeRow(`${title} — ${hostOf(r.final_url ?? r.url)}`, theme, isLast)];
+		return [treeRow(`${title} — ${hostOf(r.final_url ?? r.url)}`, theme, isLast, maxRowWidth)];
 	}
 	const meta = [r.language, r.author, r.published_date, r.latency_ms != null ? `${Math.round(r.latency_ms)}ms` : undefined]
 		.filter((v): v is string => Boolean(v));
 	const text = typeof r.text === "string" ? r.text : JSON.stringify(r.text ?? "");
 	const body = text.split("\n").filter(line => line.trim());
-	const lines = [treeRow(title, theme, false)];
-	if (r.description) lines.push(detailRow(r.description, theme));
-	if (meta.length > 0) lines.push(detailRow(meta.join(" · "), theme));
+	const lines = [treeRow(title, theme, false, maxRowWidth)];
+	if (r.description) lines.push(detailRow(r.description, theme, 3, maxDetailWidth));
+	if (meta.length > 0) lines.push(detailRow(meta.join(" · "), theme, 3, maxDetailWidth));
 	if (body.length > 0) lines.push(...previewLines(body, MAX_EXPANDED_BODY_LINES, theme, width));
-	if (r.links?.length) lines.push(detailRow(theme.fg("dim", `链接 ${r.links.length} 个：${clip(r.links.join(" · "), 80)}`), theme));
-	if (r.image_links?.length) lines.push(detailRow(theme.fg("dim", `图片 ${r.image_links.length} 个：${clip(r.image_links.join(" · "), 80)}`), theme));
-	lines.push(detailRow(theme.fg("dim", r.final_url ?? r.url), theme));
+	if (r.links?.length) lines.push(detailRow(theme.fg("dim", `链接 ${r.links.length} 个：${clip(r.links.join(" · "), maxDetailWidth)}`), theme, 3, maxDetailWidth));
+	if (r.image_links?.length) lines.push(detailRow(theme.fg("dim", `图片 ${r.image_links.length} 个：${clip(r.image_links.join(" · "), maxDetailWidth)}`), theme, 3, maxDetailWidth));
+	lines.push(detailRow(theme.fg("dim", r.final_url ?? r.url), theme, 3, maxDetailWidth));
 	return lines;
 }
 
@@ -141,6 +143,7 @@ export function defineFetchTool(pi: ExtensionAPI) {
 		label: "TinyFish Fetch",
 		description:
 			"TinyFish 网页抓取：提取干净的正文内容（markdown），支持批量 URL、缓存 TTL、每 URL 超时、ETag 校验。比 MCP fetch 信息更全：返回标题/作者/发布日期/语言/最终 URL/耗时，卡片渲染正文预览。",
+		mergeCallAndResult: true,
 		parameters: z.object({
 			urls: z.array(z.string()).min(1).max(10).describe("要抓取的 URL 列表（1-10 个）"),
 			purpose: z.string().optional().describe("为什么抓取（目标/用途）"),
@@ -166,41 +169,119 @@ export function defineFetchTool(pi: ExtensionAPI) {
 			const content: Array<{ type: "text"; text: string }> = [{ type: "text", text: out.text }];
 			return { content, details: out.details, isError: out.isError };
 		},
-		renderCall(args: FetchParams, _options: unknown, theme: RenderTheme): Component {
-			const desc = `${args.urls.length} URL`;
-			return { render: () => [statusLine("F", "Fetch", desc, theme)] };
+		renderCall(args: FetchParams, options: { spinnerFrame?: number }, theme: RenderTheme): Component {
+			const count = args?.urls?.length ?? 0;
+			const desc = count === 1 && args?.urls?.[0] ? clip(args.urls[0], 80) : `${count} 个 URL`;
+			return {
+				render: () => [
+					statusLine(
+						{
+							icon: "pending",
+							spinnerFrame: options.spinnerFrame,
+							title: "Fetch",
+							description: desc,
+						},
+						theme,
+					),
+				],
+			};
 		},
 		renderResult(
-			result: { details?: FetchDetails; isError?: boolean },
-			options: { expanded?: boolean },
+			result: { content?: Array<{ type: string; text?: string }>; details?: FetchDetails; isError?: boolean },
+			options: { expanded?: boolean; isPartial?: boolean; spinnerFrame?: number },
 			theme: RenderTheme,
+			args?: FetchParams,
 		): Component {
-			const d = result.details;
-			if (result.isError || !d || d.results.length === 0) {
-				const text = result.isError ? "抓取失败" : "无内容";
-				return { render: () => [statusLine("F", "Fetch", text, theme)] };
+			const count = args?.urls?.length ?? result.details?.results.length ?? 0;
+			const desc = count === 1 && args?.urls?.[0] ? clip(args.urls[0], 80) : `${count} 个 URL`;
+
+			if (result.isError) {
+				return {
+					render: () => [
+						statusLine(
+							{
+								icon: "error",
+								title: "Fetch",
+								description: desc,
+								meta: ["抓取失败"],
+							},
+							theme,
+						),
+					],
+				};
 			}
+
+			const d = result.details;
+			if (!d) {
+				// Partial / pending update during execution (e.g. onUpdate fired before response arrived).
+				// Keep the in-flight status line with spinner rather than showing "无内容".
+				return {
+					render: () => [
+						statusLine(
+							{
+								icon: "pending",
+								spinnerFrame: options.spinnerFrame,
+								title: "Fetch",
+								description: desc,
+							},
+							theme,
+						),
+					],
+				};
+			}
+			if (d.results.length === 0 && d.errors.length === 0) {
+				return {
+					render: () => [
+						statusLine(
+							{
+								icon: "warning",
+								title: "Fetch",
+								description: desc,
+								meta: ["无内容", `${d.latency_ms}ms`],
+							},
+							theme,
+						),
+					],
+				};
+			}
+
 			return {
 				render: (width: number) => {
 					const expanded = options.expanded === true;
 					const lines: string[] = [];
+					const meta: string[] = [];
+					if (d.results.length > 0) meta.push(`成功 ${d.results.length}`);
+					if (d.errors.length > 0) meta.push(`失败 ${d.errors.length}`);
+					meta.push(`${d.latency_ms}ms`);
+
+					const icon =
+						d.errors.length > 0 && d.results.length === 0
+							? "error"
+							: d.errors.length > 0
+								? "warning"
+								: "success";
+
 					lines.push(
 						statusLine(
-							"F",
-							"Fetch",
-							`成功 ${d.results.length} · 失败 ${d.errors.length} · ${d.latency_ms}ms`,
+							{
+								icon,
+								title: "Fetch",
+								description: desc,
+								meta,
+							},
 							theme,
 						),
 					);
 					const items = expanded ? d.results.length : Math.min(d.results.length, MAX_COLLAPSED_ITEMS);
 					for (let i = 0; i < items; i++) {
-						lines.push(...fetchTree(d.results[i], i, theme, width, expanded, i === items - 1));
+						lines.push(...fetchTree(d.results[i], i, theme, width, expanded, i === items - 1 && d.errors.length === 0));
 					}
 					if (!expanded && d.results.length > items) {
 						lines.push(moreHint(d.results.length - items, "URL", theme));
 					}
+					const maxErrWidth = Math.max(30, (width || 80) - 6);
 					for (const e of d.errors) {
-						lines.push(theme.fg("error", ` ✕ ${clip(e.url, 60)} — ${e.error}`));
+						lines.push(theme.fg("error", ` ✕ ${clip(e.url, maxErrWidth)} — ${e.error}`));
 					}
 					return lines;
 				},
