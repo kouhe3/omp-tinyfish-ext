@@ -143,6 +143,8 @@ export function defineFetchTool(pi: ExtensionAPI) {
 		label: "TinyFish Fetch",
 		description:
 			"TinyFish 网页抓取：提取干净的正文内容（markdown），支持批量 URL、缓存 TTL、每 URL 超时、ETag 校验。比 MCP fetch 信息更全：返回标题/作者/发布日期/语言/最终 URL/耗时，卡片渲染正文预览。",
+		// 常驻顶层 schema：避免工具被藏进 xd:// 设备目录，模型可直接调用。
+		loadMode: "essential" as const,
 		mergeCallAndResult: true,
 		parameters: z.object({
 			urls: z.array(z.string()).min(1).max(10).describe("要抓取的 URL 列表（1-10 个）"),

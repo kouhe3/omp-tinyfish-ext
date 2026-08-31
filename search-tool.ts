@@ -147,6 +147,8 @@ export function defineSearchTool(pi: ExtensionAPI) {
 		label: "TinyFish Search",
 		description:
 			"TinyFish 网页搜索。比 MCP search 信息更全：支持 purpose（搜索意图）、域名白/黑名单、日期范围、时效、学术/新闻过滤；结果以卡片渲染，给模型的摘要默认 8 条。",
+		// 常驻顶层 schema：避免工具被藏进 xd:// 设备目录，模型可直接调用。
+		loadMode: "essential" as const,
 		mergeCallAndResult: true,
 		parameters: z.object({
 			query: z.string().describe("搜索查询词"),
