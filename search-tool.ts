@@ -43,6 +43,42 @@ interface SearchParams {
 	max_results?: number;
 }
 
+function normalizeSearchParams(params: SearchParams): SearchParams {
+  const normalized = { ...params };
+  const validDate = (value: string | undefined): value is string => {
+    if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const date = new Date(`${value}T00:00:00Z`);
+    return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+  };
+  for (const key of ["after_date", "before_date"] as const) {
+    if (!validDate(normalized[key])) delete normalized[key];
+  }
+  if (normalized.after_date && normalized.before_date && normalized.after_date > normalized.before_date) {
+    delete normalized.after_date;
+    delete normalized.before_date;
+  }
+  if (!Number.isInteger(normalized.recency_minutes) || (normalized.recency_minutes ?? 0) < 1 || (normalized.recency_minutes ?? 0) > 5_256_000) {
+    delete normalized.recency_minutes;
+  } else if (normalized.after_date || normalized.before_date) {
+    delete normalized.recency_minutes;
+    delete normalized.after_date;
+    delete normalized.before_date;
+  }
+  const validYear = (year: number | undefined): year is number => year === undefined || (Number.isInteger(year) && year >= 0 && year <= 9999);
+  if (normalized.domain_type !== "research_paper" || !validYear(normalized.pub_year_min)) delete normalized.pub_year_min;
+  if (normalized.domain_type !== "research_paper" || !validYear(normalized.pub_year_max)) delete normalized.pub_year_max;
+  if (normalized.pub_year_min !== undefined && normalized.pub_year_max !== undefined && normalized.pub_year_min > normalized.pub_year_max) {
+    delete normalized.pub_year_min;
+    delete normalized.pub_year_max;
+  }
+  if (normalized.purpose !== undefined) {
+    const purpose = normalized.purpose.trim();
+    if (purpose.length === 0 || purpose.length > 2000) delete normalized.purpose;
+    else normalized.purpose = purpose;
+  }
+  return normalized;
+}
+
 export interface SearchDetails {
 	query: string;
 	total_results: number;
@@ -78,9 +114,8 @@ export async function runSearch(
 	onUpdate?.({ content: [{ type: "text", text: `[tf] 正在搜索「${stripAnsi(params.query)}」…` }] });
 	if (signal?.aborted) return { text: "已取消", details: emptyDetails(params) };
 
-	// `max_results` is a local display cap — the SDK schema is strict and
-	// rejects unknown keys, so it must not reach the wire.
-	const { max_results: _maxResults, ...apiParams } = params;
+	const { max_results: _maxResults, ...rawApiParams } = params;
+	const apiParams = normalizeSearchParams(rawApiParams);
 	let res: SearchQueryResponse;
 	try {
 		res = await api.search.query(apiParams);
@@ -157,10 +192,10 @@ export function defineSearchTool(pi: ExtensionAPI) {
 			language: z.string().optional().describe("结果语言，如 'zh'"),
 			include_domains: z.string().optional().describe("限定域名，逗号分隔，如 'github.com,arxiv.org'"),
 			exclude_domains: z.string().optional().describe("排除域名，逗号分隔"),
-			after_date: z.string().optional().describe("最早日期，YYYY-MM-DD"),
-			before_date: z.string().optional().describe("最晚日期，YYYY-MM-DD"),
-			recency_minutes: z.number().optional().describe("只看最近 N 分钟内的结果"),
 			domain_type: z.enum(["web", "news", "research_paper"]).optional().describe("结果类型：网页/新闻/学术论文"),
+			after_date: z.string().optional().describe("最早日期，YYYY-MM-DD；无效日期会被忽略"),
+			before_date: z.string().optional().describe("最晚日期，YYYY-MM-DD；无效日期会被忽略"),
+			recency_minutes: z.number().optional().describe("只看最近 N 分钟内的结果，至少 1 分钟，不能与日期范围同时使用"),
 			pub_year_min: z.number().optional().describe("论文出版年份下限"),
 			pub_year_max: z.number().optional().describe("论文出版年份上限"),
 			page: z.number().max(10).optional().describe("分页页码，0 起（0 = 第 1 页），最大 10"),
@@ -206,8 +241,10 @@ export function defineSearchTool(pi: ExtensionAPI) {
 		): Component {
 			if (result.isError) {
 				const desc = args?.query ? clip(args.query, 80) : undefined;
+				const errorText = result.content?.find(item => item.type === "text")?.text?.trim();
+				const reason = errorText ? clip(stripAnsi(errorText).replace(/\s+/g, " "), 120) : "未知错误";
 				return {
-					render: () => [
+					render: (width: number) => [
 						statusLine(
 							{
 								icon: "error",
@@ -217,6 +254,7 @@ export function defineSearchTool(pi: ExtensionAPI) {
 							},
 							theme,
 						),
+						detailRow(`原因：${reason}`, theme, 3, Math.max(30, (width || 80) - 3)),
 					],
 				};
 			}

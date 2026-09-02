@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { type FetchDetails, defineFetchTool } from "./fetch-tool";
 import { type RenderTheme } from "./render";
-import { type SearchDetails, defineSearchTool } from "./search-tool";
+import { type SearchDetails, defineSearchTool, runSearch } from "./search-tool";
 
 const schema = () => ({
 	describe() {
@@ -123,6 +123,38 @@ describe("TinyFish TUI Rendering", () => {
 			expect(lines.some((l: string) => l.includes("2. Node.js 24 Overview"))).toBe(true);
 		});
 
+		test("runSearch omits invalid filters before calling the SDK", async () => {
+			let sent: unknown;
+			await runSearch(
+				{
+					query: "captcha",
+					after_date: "",
+					before_date: "2026-9-2",
+					recency_minutes: 0,
+				},
+				{ search: { query: async params => { sent = params; return { query: "captcha", total_results: 0, page: 0, results: [] }; } } },
+			);
+			expect(sent).toEqual({ query: "captcha" });
+		});
+
+		test("runSearch omits conflicting recency and date filters", async () => {
+			let sent: unknown;
+			await runSearch(
+				{ query: "captcha", after_date: "2026-01-01", recency_minutes: 60 },
+				{ search: { query: async params => { sent = params; return { query: "captcha", total_results: 0, page: 0, results: [] }; } } },
+			);
+			expect(sent).toEqual({ query: "captcha" });
+		});
+
+		test("runSearch only sends publication years for research papers", async () => {
+			let sent: unknown;
+			await runSearch(
+				{ query: "captcha", domain_type: "web", pub_year_min: 2020, pub_year_max: 2024 },
+				{ search: { query: async params => { sent = params; return { query: "captcha", total_results: 0, page: 0, results: [] }; } } },
+			);
+			expect(sent).toEqual({ query: "captcha", domain_type: "web" });
+		});
+
 		test("renderResult displays warning when no results found", () => {
 			const details: SearchDetails = {
 				query: "asdkjhqwiueyhasjkdhaksd",
@@ -145,17 +177,21 @@ describe("TinyFish TUI Rendering", () => {
 			expect(lines[0]).toContain("无结果 · 85ms");
 		});
 
-		test("renderResult displays error status when isError is true", () => {
+		test("renderResult displays the search error reason", () => {
 			const component = searchTool.renderResult(
-				{ isError: true },
+				{
+					content: [{ type: "text", text: "TinyFish RateLimitError：请求过于频繁" }],
+					isError: true,
+				},
 				{ expanded: false },
 				mockTheme,
 				{ query: "test query" },
 			);
 			const lines = component.render(80);
-			expect(lines).toHaveLength(1);
+			expect(lines).toHaveLength(2);
 			expect(lines[0]).toContain("✕ Search: test query");
 			expect(lines[0]).toContain("搜索失败");
+			expect(lines[1]).toContain("原因：TinyFish RateLimitError：请求过于频繁");
 		});
 	});
 
