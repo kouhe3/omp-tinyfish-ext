@@ -70,7 +70,7 @@ describe("TinyFish TUI Rendering", () => {
 
 		test("renderResult during in-flight execution (no details) does NOT display '无结果'", () => {
 			const component = searchTool.renderResult(
-				{ content: [{ type: "text", text: "[tf] 正在搜索…" }] },
+				{ content: [{ type: "text", text: "[tf] 正在搜索…" }], details: {} as never },
 				{ spinnerFrame: 0, isPartial: true },
 				mockTheme,
 				{ query: "TypeScript 5.8" },
@@ -81,6 +81,9 @@ describe("TinyFish TUI Rendering", () => {
 			expect(lines[0]).not.toContain("搜索失败");
 			expect(lines[0]).toContain("Search: TypeScript 5.8");
 			expect(lines[0]).toContain("⠋");
+			expect(lines).toEqual(
+				searchTool.renderCall({ query: "TypeScript 5.8" }, { spinnerFrame: 0 }, mockTheme).render(80),
+			);
 		});
 
 		test("renderResult displays search results correctly when completed", () => {
@@ -220,7 +223,7 @@ describe("TinyFish TUI Rendering", () => {
 
 		test("renderResult during in-flight execution (no details) does NOT display '无内容'", () => {
 			const component = fetchTool.renderResult(
-				{ content: [{ type: "text", text: "[tf] 正在抓取 1 个 URL…" }] },
+				{ content: [{ type: "text", text: "[tf] 正在抓取 1 个 URL…" }], details: {} as never },
 				{ spinnerFrame: 0, isPartial: true },
 				mockTheme,
 				{ urls: ["https://example.com"] },
@@ -231,6 +234,9 @@ describe("TinyFish TUI Rendering", () => {
 			expect(lines[0]).not.toContain("抓取失败");
 			expect(lines[0]).toContain("Fetch: https://example.com");
 			expect(lines[0]).toContain("⠋");
+			expect(lines).toEqual(
+				fetchTool.renderCall({ urls: ["https://example.com"] }, { spinnerFrame: 0 }, mockTheme).render(80),
+			);
 		});
 
 		test("renderResult displays fetch results correctly when completed", () => {

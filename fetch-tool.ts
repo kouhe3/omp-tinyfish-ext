@@ -214,7 +214,7 @@ export function defineFetchTool(pi: ExtensionAPI) {
 			}
 
 			const d = result.details;
-			if (!d) {
+			if (options.isPartial || !d) {
 				// Partial / pending update during execution (e.g. onUpdate fired before response arrived).
 				// Keep the in-flight status line with spinner rather than showing "无内容".
 				return {

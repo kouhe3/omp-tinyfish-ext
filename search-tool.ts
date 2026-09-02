@@ -260,7 +260,7 @@ export function defineSearchTool(pi: ExtensionAPI) {
 			}
 
 			const d = result.details;
-			if (!d) {
+			if (options.isPartial || !d) {
 				// Partial / pending update during execution (e.g. onUpdate fired before response arrived).
 				// Keep the in-flight status line with spinner rather than showing "无结果".
 				const desc = args?.query ? clip(args.query, 80) : "…";
