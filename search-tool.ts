@@ -16,6 +16,7 @@ import {
 	MAX_COLLAPSED_ITEMS,
 	clip,
 	detailRow,
+	framedTree,
 	moreHint,
 	statusLine,
 	stripAnsi,
@@ -219,7 +220,7 @@ export function defineSearchTool(pi: ExtensionAPI) {
 			theme: RenderTheme,
 		): Component {
 			const desc = args?.query ? clip(args.query, 80) : "…";
-			return {
+			return framedTree({
 				render: () => [
 					statusLine(
 						{
@@ -231,7 +232,7 @@ export function defineSearchTool(pi: ExtensionAPI) {
 						theme,
 					),
 				],
-			};
+			});
 		},
 		renderResult(
 			result: { content?: Array<{ type: string; text?: string }>; details?: SearchDetails; isError?: boolean },
@@ -243,7 +244,7 @@ export function defineSearchTool(pi: ExtensionAPI) {
 				const desc = args?.query ? clip(args.query, 80) : undefined;
 				const errorText = result.content?.find(item => item.type === "text")?.text?.trim();
 				const reason = errorText ? clip(stripAnsi(errorText).replace(/\s+/g, " "), 120) : "未知错误";
-				return {
+				return framedTree({
 					render: (width: number) => [
 						statusLine(
 							{
@@ -256,7 +257,7 @@ export function defineSearchTool(pi: ExtensionAPI) {
 						),
 						detailRow(`原因：${reason}`, theme, 3, Math.max(30, (width || 80) - 3)),
 					],
-				};
+				});
 			}
 
 			const d = result.details;
@@ -264,7 +265,7 @@ export function defineSearchTool(pi: ExtensionAPI) {
 				// Partial / pending update during execution (e.g. onUpdate fired before response arrived).
 				// Keep the in-flight status line with spinner rather than showing "无结果".
 				const desc = args?.query ? clip(args.query, 80) : "…";
-				return {
+				return framedTree({
 					render: () => [
 						statusLine(
 							{
@@ -276,11 +277,11 @@ export function defineSearchTool(pi: ExtensionAPI) {
 							theme,
 						),
 					],
-				};
+				});
 			}
 
 			if (d.results.length === 0) {
-				return {
+				return framedTree({
 					render: () => [
 						statusLine(
 							{
@@ -292,9 +293,9 @@ export function defineSearchTool(pi: ExtensionAPI) {
 							theme,
 						),
 					],
-				};
+				});
 			}
-			return {
+			return framedTree({
 				render: (width: number) => {
 					const expanded = options.expanded === true;
 					const lines: string[] = [];
@@ -320,7 +321,7 @@ export function defineSearchTool(pi: ExtensionAPI) {
 					}
 					return lines;
 				},
-			};
+			});
 		},
 	};
 }

@@ -1,18 +1,30 @@
 /**
- * Zero-dependency TUI rendering helpers — compact tree style.
+ * Compact tree-style helpers for the TinyFish tool renderers.
  *
  * Design mirrors the built-in `web_search` renderer: ONE block per tool call
  * (header + tree rows), NOT one card per result. Collapsed = one row per
  * item; expanded = a few rows per item. Long bodies (fetch) are NEVER shown
  * in full — a short preview with a "N more" hint, like `read`.
  *
- * `renderCall`/`renderResult` must return a pi-tui `Component`, which is a
- * duck-typed `{ render(width: number): string[] }`. We deliberately do NOT
- * import `@oh-my-pi/pi-tui`: the host runs its own bundled copy, and a second
- * copy from the extension's node_modules would make `instanceof` checks (and
- * any hidden class identity) diverge. A plain object with a `render` method
- * is the stable contract.
+ * `renderCall`/`renderResult` return a pi-tui `Component`, which is a
+ * duck-typed `{ render(width: number): string[] }` — plain objects stay the
+ * contract. The one host import is the frame MARK: `framedTree` flags the
+ * component via `markFramedBlockComponent`, a module-private symbol on the
+ * host's pi-tui copy, so omp stops padding the block by a column and painting
+ * its own state tint and renders our rows as-is. That symbol cannot be
+ * duck-typed; omp rewrites `@oh-my-pi/pi-tui/*` imports in extension sources
+ * onto its own in-process copy, so this import reaches the same instance
+ * `ToolExecutionComponent` checks.
  */
+
+/**
+ * Mark a component as owning its frame: the host then renders these rows
+ * flush instead of padding the block and tinting it by tool state.
+ *
+ * Borderless on purpose — this extension draws a tree, not a card, so the
+ * rows the caller returns are the whole block.
+ */
+export { markFramedBlockComponent as framedTree } from "@oh-my-pi/pi-tui/render";
 
 /** Max items shown per tool result before "N more" (PREVIEW_LIMITS.COLLAPSED_ITEMS = 8). */
 export const MAX_COLLAPSED_ITEMS = 8;

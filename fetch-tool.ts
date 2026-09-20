@@ -14,6 +14,7 @@ import {
 	MAX_EXPANDED_BODY_LINES,
 	clip,
 	detailRow,
+	framedTree,
 	hostOf,
 	moreHint,
 	previewLines,
@@ -174,7 +175,7 @@ export function defineFetchTool(pi: ExtensionAPI) {
 		renderCall(args: FetchParams, options: { spinnerFrame?: number }, theme: RenderTheme): Component {
 			const count = args?.urls?.length ?? 0;
 			const desc = count === 1 && args?.urls?.[0] ? clip(args.urls[0], 80) : `${count} 个 URL`;
-			return {
+			return framedTree({
 				render: () => [
 					statusLine(
 						{
@@ -186,7 +187,7 @@ export function defineFetchTool(pi: ExtensionAPI) {
 						theme,
 					),
 				],
-			};
+			});
 		},
 		renderResult(
 			result: { content?: Array<{ type: string; text?: string }>; details?: FetchDetails; isError?: boolean },
@@ -198,7 +199,7 @@ export function defineFetchTool(pi: ExtensionAPI) {
 			const desc = count === 1 && args?.urls?.[0] ? clip(args.urls[0], 80) : `${count} 个 URL`;
 
 			if (result.isError) {
-				return {
+				return framedTree({
 					render: () => [
 						statusLine(
 							{
@@ -210,14 +211,14 @@ export function defineFetchTool(pi: ExtensionAPI) {
 							theme,
 						),
 					],
-				};
+				});
 			}
 
 			const d = result.details;
 			if (options.isPartial || !d) {
 				// Partial / pending update during execution (e.g. onUpdate fired before response arrived).
 				// Keep the in-flight status line with spinner rather than showing "无内容".
-				return {
+				return framedTree({
 					render: () => [
 						statusLine(
 							{
@@ -229,10 +230,10 @@ export function defineFetchTool(pi: ExtensionAPI) {
 							theme,
 						),
 					],
-				};
+				});
 			}
 			if (d.results.length === 0 && d.errors.length === 0) {
-				return {
+				return framedTree({
 					render: () => [
 						statusLine(
 							{
@@ -244,10 +245,10 @@ export function defineFetchTool(pi: ExtensionAPI) {
 							theme,
 						),
 					],
-				};
+				});
 			}
 
-			return {
+			return framedTree({
 				render: (width: number) => {
 					const expanded = options.expanded === true;
 					const lines: string[] = [];
@@ -287,7 +288,7 @@ export function defineFetchTool(pi: ExtensionAPI) {
 					}
 					return lines;
 				},
-			};
+			});
 		},
 	};
 }

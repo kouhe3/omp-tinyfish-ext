@@ -1,3 +1,4 @@
+import { isFramedBlockComponent } from "@oh-my-pi/pi-tui/render";
 import { describe, expect, test } from "bun:test";
 import { type FetchDetails, defineFetchTool } from "./fetch-tool";
 import { type RenderTheme } from "./render";
@@ -51,6 +52,53 @@ describe("TinyFish TUI Rendering", () => {
 
 		expect(searchTool.mergeCallAndResult).toBe(true);
 		expect(fetchTool.mergeCallAndResult).toBe(true);
+	});
+
+	test("every renderer branch marks its component as owning the frame", () => {
+		const searchTool = defineSearchTool({ zod: zStub } as never);
+		const fetchTool = defineFetchTool({ zod: zStub } as never);
+		const searchHit: SearchDetails = {
+			query: "q",
+			total_results: 1,
+			page: 0,
+			latency_ms: 12,
+			shown: 1,
+			truncated: false,
+			results: [{ position: 1, title: "T", url: "https://example.com", snippet: "s" } as never],
+		};
+		const searchMiss: SearchDetails = { ...searchHit, total_results: 0, shown: 0, results: [] };
+		const fetchHit: FetchDetails = {
+			latency_ms: 12,
+			results: [{ url: "https://example.com", final_url: "https://example.com", title: "T" } as never],
+			errors: [],
+			chars: [12],
+		};
+		const fetchMiss: FetchDetails = { latency_ms: 12, results: [], errors: [], chars: [] };
+		const fetchFailed: FetchDetails = {
+			latency_ms: 12,
+			results: [],
+			errors: [{ url: "https://example.com", error: "boom" }],
+			chars: [],
+		};
+		const partial = { isPartial: true } as const;
+		const failed = { content: [{ type: "text", text: "boom" }], isError: true };
+		const components = [
+			searchTool.renderCall({ query: "q" }, {}, mockTheme),
+			searchTool.renderResult({ details: searchHit }, {}, mockTheme, { query: "q" }),
+			searchTool.renderResult({ details: searchMiss }, {}, mockTheme, { query: "q" }),
+			searchTool.renderResult({ details: {} as never }, partial, mockTheme, { query: "q" }),
+			searchTool.renderResult(failed, {}, mockTheme, { query: "q" }),
+			fetchTool.renderCall({ urls: ["https://example.com"] }, {}, mockTheme),
+			fetchTool.renderResult({ details: fetchHit }, {}, mockTheme, { urls: ["https://example.com"] }),
+			fetchTool.renderResult({ details: fetchMiss }, {}, mockTheme, { urls: ["https://example.com"] }),
+			fetchTool.renderResult({ details: fetchFailed }, {}, mockTheme, { urls: ["https://example.com"] }),
+			fetchTool.renderResult({ details: {} as never }, partial, mockTheme, { urls: ["https://example.com"] }),
+			fetchTool.renderResult(failed, {}, mockTheme, { urls: ["https://example.com"] }),
+		];
+		// Unmarked, the host pads the block by a column and tints it by state.
+		for (const component of components) {
+			expect(isFramedBlockComponent(component)).toBe(true);
+		}
 	});
 
 	describe("tf_search", () => {

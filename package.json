@@ -8,12 +8,12 @@
 		"extensions": ["."]
 	},
 	"dependencies": {
-		"@tiny-fish/sdk": "^0.5.0"
+		"@tiny-fish/sdk": "^0.7.0"
 	},
 	"devDependencies": {
-		"@oh-my-pi/pi-coding-agent": "^18.1.2",
-		"@types/bun": "^1.4.0",
-		"@types/node": "^26.2.0",
+		"@oh-my-pi/pi-coding-agent": "^18.2.6",
+		"@oh-my-pi/pi-tui": "^18.2.6",
+		"@types/bun": "^1.4.2",
 		"typescript": "^7.0.2"
 	}
 }
